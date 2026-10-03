@@ -7,11 +7,14 @@ import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
+import org.springframework.dao.DataAccessResourceFailureException;
+import org.springframework.dao.TransientDataAccessException;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.transaction.CannotCreateTransactionException;
 import org.springframework.web.HttpMediaTypeNotSupportedException;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -35,6 +38,17 @@ public class ProblemHandler {
             res.header(HttpHeaders.RETRY_AFTER, String.valueOf(e.retryAfterSeconds()));
         }
         return res.body(body);
+    }
+
+    /** The database is unreachable: say so quickly and honestly. Nothing was changed. */
+    @ExceptionHandler({DataAccessResourceFailureException.class, TransientDataAccessException.class,
+            CannotCreateTransactionException.class})
+    ResponseEntity<Map<String, Object>> databaseDown(Exception e) {
+        log.warn("Database unreachable: {}", e.getMessage());
+        ErrorCode c = ErrorCode.UPSTREAM_UNAVAILABLE;
+        var body = problem(c.status(), c.title(), c.name(), "We can't reach our records right now. Nothing was changed; try again shortly.");
+        body.put("retryAfterSeconds", 5);
+        return ResponseEntity.status(c.status()).contentType(PROBLEM).header(HttpHeaders.RETRY_AFTER, "5").body(body);
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
