@@ -14,13 +14,13 @@
   <!-- Published through JitPack from git tags: com.github.SaiNayakk:sprout-identity:<tag> -->
   <groupId>com.github.SaiNayakk</groupId>
   <artifactId>sprout-identity</artifactId>
-  <version>0.1.0</version>
+  <version>0.2.1</version>
   <name>sprout-identity</name>
   <description>Sign-up, sign-in with password and TOTP, and token management for Sprout.</description>
 
   <properties>
     <java.version>21</java.version>
-    <sprout-contracts.version>v0.1.1</sprout-contracts.version>
+    <sprout-contracts.version>v0.2.0</sprout-contracts.version>
   </properties>
 
   <repositories>

@@ -15,7 +15,8 @@ public enum ErrorCode {
     REFRESH_TOKEN_REUSED(HttpStatus.UNAUTHORIZED, "This session was ended for your safety"),
     UNAUTHENTICATED(HttpStatus.UNAUTHORIZED, "Sign in to continue"),
     TOTP_ALREADY_ENABLED(HttpStatus.CONFLICT, "Two-factor is already on"),
-    TOTP_NOT_STARTED(HttpStatus.CONFLICT, "Start two-factor setup first");
+    TOTP_NOT_STARTED(HttpStatus.CONFLICT, "Start two-factor setup first"),
+    UPSTREAM_UNAVAILABLE(HttpStatus.SERVICE_UNAVAILABLE, "Temporarily unavailable");
 
     private final HttpStatus status;
     private final String title;

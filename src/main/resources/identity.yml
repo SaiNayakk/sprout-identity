@@ -10,6 +10,10 @@ spring:
     hikari:
       maximum-pool-size: 5
       pool-name: identity
+      # Fail fast when the database is unreachable (found by chaos test CHAOS-01): the default
+      # 30 s wait held a request thread per call and let the gateway time out first.
+      connection-timeout: 2000
+      validation-timeout: 1000
   flyway:
     locations: classpath:db/identity
     schemas: identity

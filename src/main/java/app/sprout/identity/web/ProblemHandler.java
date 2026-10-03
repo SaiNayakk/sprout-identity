@@ -7,11 +7,14 @@ import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
+import org.springframework.dao.DataAccessResourceFailureException;
+import org.springframework.dao.TransientDataAccessException;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.transaction.CannotCreateTransactionException;
 import org.springframework.web.HttpMediaTypeNotSupportedException;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -35,6 +38,17 @@ public class ProblemHandler {
             res.header(HttpHeaders.RETRY_AFTER, String.valueOf(e.retryAfterSeconds()));
         }
         return res.body(body);
+    }
+
+    /** The database is unreachable: say so quickly and honestly. Nothing was changed. */
+    @ExceptionHandler({DataAccessResourceFailureException.class, TransientDataAccessException.class,
+            CannotCreateTransactionException.class})
+    ResponseEntity<Map<String, Object>> databaseDown(Exception e) {
+        log.warn("Database unreachable: {}", e.getMessage());
+        ErrorCode c = ErrorCode.UPSTREAM_UNAVAILABLE;
+        var body = problem(c.status(), c.title(), c.name(), "We can't reach our records right now. Nothing was changed; try again shortly.");
+        body.put("retryAfterSeconds", 5);
+        return ResponseEntity.status(c.status()).contentType(PROBLEM).header(HttpHeaders.RETRY_AFTER, "5").body(body);
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
@@ -69,10 +83,41 @@ public class ProblemHandler {
 
     @ExceptionHandler(Exception.class)
     ResponseEntity<Map<String, Object>> unexpected(Exception e) {
+        if (databaseUnreachable(e)) {
+            // e.g. the connection died mid-transaction and the rollback failed too (CHAOS-01 on CI)
+            return databaseDown(e);
+        }
         log.error("Unexpected failure", e);
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).contentType(PROBLEM)
                 .body(problem(HttpStatus.INTERNAL_SERVER_ERROR, "Something went wrong", "INTERNAL",
                         "Try again in a moment. If it keeps happening, quote the request id."));
+    }
+
+    /** True if anything in the cause chain is a lost or refused database connection. */
+    static boolean databaseUnreachable(Throwable e) {
+        java.util.Set<Throwable> seen = new java.util.HashSet<>();
+        java.util.Deque<Throwable> todo = new java.util.ArrayDeque<>(java.util.List.of(e));
+        while (!todo.isEmpty()) {
+            Throwable t = todo.pop();
+            if (!seen.add(t)) {
+                continue;
+            }
+            if (t instanceof java.sql.SQLTransientConnectionException || t instanceof java.sql.SQLRecoverableException
+                    || t instanceof java.net.SocketException || t instanceof DataAccessResourceFailureException
+                    || t instanceof CannotCreateTransactionException) {
+                return true;
+            }
+            if (t instanceof java.sql.SQLException sql && sql.getSQLState() != null && sql.getSQLState().startsWith("08")) {
+                return true;
+            }
+            if (t instanceof org.springframework.transaction.TransactionSystemException tse && tse.getApplicationException() != null) {
+                todo.push(tse.getApplicationException());
+            }
+            if (t.getCause() != null) {
+                todo.push(t.getCause());
+            }
+        }
+        return false;
     }
 
     private ResponseEntity<Map<String, Object>> validation(String detail) {
