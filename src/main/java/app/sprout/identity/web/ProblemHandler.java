@@ -83,10 +83,41 @@ public class ProblemHandler {
 
     @ExceptionHandler(Exception.class)
     ResponseEntity<Map<String, Object>> unexpected(Exception e) {
+        if (databaseUnreachable(e)) {
+            // e.g. the connection died mid-transaction and the rollback failed too (CHAOS-01 on CI)
+            return databaseDown(e);
+        }
         log.error("Unexpected failure", e);
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).contentType(PROBLEM)
                 .body(problem(HttpStatus.INTERNAL_SERVER_ERROR, "Something went wrong", "INTERNAL",
                         "Try again in a moment. If it keeps happening, quote the request id."));
+    }
+
+    /** True if anything in the cause chain is a lost or refused database connection. */
+    static boolean databaseUnreachable(Throwable e) {
+        java.util.Set<Throwable> seen = new java.util.HashSet<>();
+        java.util.Deque<Throwable> todo = new java.util.ArrayDeque<>(java.util.List.of(e));
+        while (!todo.isEmpty()) {
+            Throwable t = todo.pop();
+            if (!seen.add(t)) {
+                continue;
+            }
+            if (t instanceof java.sql.SQLTransientConnectionException || t instanceof java.sql.SQLRecoverableException
+                    || t instanceof java.net.SocketException || t instanceof DataAccessResourceFailureException
+                    || t instanceof CannotCreateTransactionException) {
+                return true;
+            }
+            if (t instanceof java.sql.SQLException sql && sql.getSQLState() != null && sql.getSQLState().startsWith("08")) {
+                return true;
+            }
+            if (t instanceof org.springframework.transaction.TransactionSystemException tse && tse.getApplicationException() != null) {
+                todo.push(tse.getApplicationException());
+            }
+            if (t.getCause() != null) {
+                todo.push(t.getCause());
+            }
+        }
+        return false;
     }
 
     private ResponseEntity<Map<String, Object>> validation(String detail) {
