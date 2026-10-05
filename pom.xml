@@ -14,7 +14,7 @@
   <!-- Released as git tags vX.Y.Z; hosts build a release from its tag (sprout-platform ADR-011). -->
   <groupId>com.github.SaiNayakk</groupId>
   <artifactId>sprout-identity</artifactId>
-  <version>0.2.2</version>
+  <version>0.2.3</version>
   <name>sprout-identity</name>
   <description>Sign-up, sign-in with password and TOTP, and token management for Sprout.</description>
 
