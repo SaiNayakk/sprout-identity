@@ -82,3 +82,7 @@ sprout:
     totp-encryption-key: ${IDENTITY_TOTP_KEY:}
     # PEM file with the RSA private key that signs access tokens. Empty: a new key per start (dev only).
     signing-key-path: ${IDENTITY_SIGNING_KEY_PATH:}
+    # Demo users for the public sandbox (fictional customers visitors explore as). Off unless the sandbox runs here.
+    demo:
+      enabled: ${IDENTITY_DEMO_ENABLED:false}
+      service-key: ${SPROUT_SERVICE_KEY:dev-only-service-key}

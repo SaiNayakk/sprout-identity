@@ -28,10 +28,14 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 public class IdentityController {
 
+    public record DemoUserRequest(String email, String password, String displayName) {}
+
     private final IdentityService identity;
     private final TokenService tokens;
+    private final app.sprout.identity.config.IdentityProperties props;
 
-    public IdentityController(IdentityService identity, TokenService tokens) {
+    public IdentityController(IdentityService identity, TokenService tokens, app.sprout.identity.config.IdentityProperties props) {
+        this.props = props;
         this.identity = identity;
         this.tokens = tokens;
     }
@@ -40,6 +44,21 @@ public class IdentityController {
     @ResponseStatus(HttpStatus.CREATED)
     public User signUp(@Valid @RequestBody SignUpRequest req) {
         return User.of(identity.signUp(req.email(), req.password(), req.displayName()));
+    }
+
+    /** For the sandbox service: a fictional customer. Not there at all unless the sandbox is switched on here. */
+    @PostMapping(path = "/internal/v1/demo-users", consumes = MediaType.APPLICATION_JSON_VALUE)
+    public User demoUser(@RequestHeader(name = "X-Service-Key", required = false) String key, @RequestBody DemoUserRequest req)
+            throws org.springframework.web.servlet.resource.NoResourceFoundException {
+        if (props.demo() == null || !props.demo().enabled()) {
+            throw new org.springframework.web.servlet.resource.NoResourceFoundException(org.springframework.http.HttpMethod.POST,
+                    "internal/v1/demo-users");
+        }
+        if (key == null || !java.security.MessageDigest.isEqual(key.getBytes(java.nio.charset.StandardCharsets.UTF_8),
+                props.demo().serviceKey().getBytes(java.nio.charset.StandardCharsets.UTF_8))) {
+            throw new IdentityException(ErrorCode.UNAUTHENTICATED, "Only Sprout services can call this.");
+        }
+        return User.of(identity.demoUser(req.email(), req.password(), req.displayName()));
     }
 
     @GetMapping("/v1/users/me")

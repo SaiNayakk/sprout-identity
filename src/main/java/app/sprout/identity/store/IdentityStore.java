@@ -22,7 +22,7 @@ public class IdentityStore {
     public record UserRow(
             UUID id, String email, String displayName, String passwordHash,
             String totpSecret, String totpPendingSecret, Long totpLastStep,
-            int failedAttempts, Instant lockedUntil, Instant createdAt) {
+            int failedAttempts, Instant lockedUntil, Instant createdAt, boolean demo) {
         public boolean totpEnabled() {
             return totpSecret != null;
         }
@@ -45,6 +45,17 @@ public class IdentityStore {
                 insert into users (id, email, email_normalized, display_name, password_hash, created_at)
                 values (?, ?, ?, ?, ?, ?)""")
                 .params(id, email, normalized, displayName, hash, ts(now)).update();
+    }
+
+    /** Creates a demo user, or (same email) makes it one with this password and name. */
+    public UUID upsertDemoUser(UUID id, String email, String normalized, String displayName, String hash, Instant now) {
+        return db.sql("""
+                insert into users (id, email, email_normalized, display_name, password_hash, created_at, demo)
+                values (?, ?, ?, ?, ?, ?, true)
+                on conflict (email_normalized) do update set display_name = excluded.display_name, password_hash = excluded.password_hash,
+                    demo = true, failed_attempts = 0, locked_until = null
+                returning id""")
+                .params(id, email, normalized, displayName, hash, ts(now)).query(UUID.class).single();
     }
 
     public Optional<UserRow> findUserByEmail(String normalized) {
@@ -165,7 +176,7 @@ public class IdentityStore {
         return new UserRow(rs.getObject("id", UUID.class), rs.getString("email"), rs.getString("display_name"),
                 rs.getString("password_hash"), rs.getString("totp_secret"), rs.getString("totp_pending_secret"),
                 rs.getObject("totp_last_step", Long.class), rs.getInt("failed_attempts"),
-                inst(rs, "locked_until"), inst(rs, "created_at"));
+                inst(rs, "locked_until"), inst(rs, "created_at"), rs.getBoolean("demo"));
     }
 
     private static Instant inst(ResultSet rs, String col) throws SQLException {
