@@ -89,6 +89,18 @@ public class IdentityService {
         return store.findUser(id).orElseThrow();
     }
 
+    /** A fictional customer for the public sandbox (the caller checked the sandbox is on and the service key). */
+    @Transactional
+    public UserRow demoUser(String email, String password, String displayName) {
+        if (password == null || password.length() < 24 || password.length() > 128 || displayName == null || displayName.isBlank()
+                || displayName.length() > 80 || email == null || !email.contains("@")) {
+            throw new IdentityException(ErrorCode.VALIDATION_FAILED, "A demo user needs an email, a name and a password of 24 to 128 characters.");
+        }
+        UUID id = store.upsertDemoUser(UUID.randomUUID(), email.trim(), normalize(email), displayName.trim(), bcrypt.encode(password),
+                clock.instant());
+        return store.findUser(id).orElseThrow();
+    }
+
     // ── sign-in ──────────────────────────────────────────────────────────────
 
     @Transactional(noRollbackFor = IdentityException.class)
@@ -103,7 +115,9 @@ public class IdentityService {
         UserRow user = store.lockUser(found.get().id()).orElseThrow();
         ensureNotLocked(user, now);
         if (!bcrypt.matches(password, user.passwordHash())) {
-            registerFailure(user, now);
+            if (!user.demo()) {   // a demo user's password is long and random: guessing can't work, and a lock would spoil it for the next visitor
+                registerFailure(user, now);
+            }
             meters.counter("identity.signins", "result", "invalid").increment();
             throw invalidCredentials();
         }
@@ -190,6 +204,9 @@ public class IdentityService {
     @Transactional
     public Enrollment startTotp(UUID userId) {
         UserRow user = store.lockUser(userId).orElseThrow();
+        if (user.demo()) {
+            throw new IdentityException(ErrorCode.VALIDATION_FAILED, "Two-factor can't be turned on for a demo customer: other visitors explore as them too.");
+        }
         if (user.totpEnabled()) {
             throw new IdentityException(ErrorCode.TOTP_ALREADY_ENABLED, "Turn two-factor off first to set it up again.");
         }

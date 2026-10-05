@@ -116,6 +116,13 @@ class IdentityApiTest {
     }
 
     @Test
+    void demoUsersDontExistWhereTheSandboxIsOff() throws Exception {
+        mvc.perform(post("/internal/v1/demo-users").header("X-Service-Key", "dev-only-service-key").contentType(MediaType.APPLICATION_JSON)
+                .content("{\"email\":\"x@sandbox.sprout.invalid\",\"password\":\"0123456789abcdefghijklmnopqrstuv\",\"displayName\":\"X\"}"))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
     void signUpRejectsADuplicateEmailIgnoringCase() throws Exception {
         signUp(email, password).andExpect(status().isCreated());
         signUp("  " + email.toUpperCase() + " ", password).andExpect(status().isConflict()).andExpect(MATCHES_CONTRACT)

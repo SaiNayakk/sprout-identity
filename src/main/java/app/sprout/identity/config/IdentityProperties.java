@@ -15,4 +15,9 @@ public record IdentityProperties(
         Duration lockout,
         int bcryptStrength,
         String totpEncryptionKey,
-        String signingKeyPath) {}
+        String signingKeyPath,
+        Demo demo) {
+
+    /** Demo users for the public sandbox: only where it's switched on, created by Sprout services with this key. */
+    public record Demo(boolean enabled, String serviceKey) {}
+}
