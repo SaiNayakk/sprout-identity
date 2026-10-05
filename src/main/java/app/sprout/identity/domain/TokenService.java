@@ -99,20 +99,37 @@ public class TokenService {
         return new IdentityException(ErrorCode.UNAUTHENTICATED, "Your session isn't valid. Sign in again.");
     }
 
-    private static RSAKey loadOrGenerate(String path) {
+    static RSAKey loadOrGenerate(String path) {
         try {
             if (path != null && !path.isBlank()) {
-                String pem = Files.readString(Path.of(path));
-                RSAKey parsed = RSAKey.parseFromPEMEncodedObjects(pem).toRSAKey();
-                return new RSAKey.Builder(parsed).keyUse(KeyUse.SIGNATURE).algorithm(JWSAlgorithm.RS256)
-                        .keyIDFromThumbprint().build();
+                return fromPem(Files.readString(Path.of(path)));
             }
             log.warn("No signing key configured (IDENTITY_SIGNING_KEY_PATH): generated a temporary one. "
                     + "Tokens won't survive a restart. Fine for dev and pre-prod, not for prod.");
             return new RSAKeyGenerator(2048).keyUse(KeyUse.SIGNATURE).algorithm(JWSAlgorithm.RS256)
                     .keyIDFromThumbprint(true).generate();
-        } catch (IOException | JOSEException e) {
+        } catch (IOException | JOSEException | java.security.GeneralSecurityException e) {
             throw new IllegalStateException("Could not load the signing key from " + path, e);
         }
+    }
+
+    /**
+     * Reads an RSA private key in PKCS#8 PEM ({@code -----BEGIN PRIVATE KEY-----}) with the JDK alone,
+     * deriving the public key from it. (Nimbus's own PEM parser needs BouncyCastle, which isn't on the
+     * classpath: that broke the first production start, where the key comes from a file.)
+     */
+    static RSAKey fromPem(String pem) throws java.security.GeneralSecurityException, JOSEException {
+        java.util.regex.Matcher m = java.util.regex.Pattern
+                .compile("-----BEGIN PRIVATE KEY-----([A-Za-z0-9+/=\\s]+)-----END PRIVATE KEY-----").matcher(pem);
+        if (!m.find()) {
+            throw new java.security.spec.InvalidKeySpecException("expected a PKCS#8 PEM block (BEGIN PRIVATE KEY)");
+        }
+        byte[] der = java.util.Base64.getMimeDecoder().decode(m.group(1));
+        java.security.KeyFactory rsa = java.security.KeyFactory.getInstance("RSA");
+        var priv = (java.security.interfaces.RSAPrivateCrtKey) rsa.generatePrivate(new java.security.spec.PKCS8EncodedKeySpec(der));
+        var pub = (java.security.interfaces.RSAPublicKey) rsa.generatePublic(
+                new java.security.spec.RSAPublicKeySpec(priv.getModulus(), priv.getPublicExponent()));
+        return new RSAKey.Builder(pub).privateKey(priv).keyUse(KeyUse.SIGNATURE).algorithm(JWSAlgorithm.RS256)
+                .keyIDFromThumbprint().build();
     }
 }
